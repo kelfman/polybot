@@ -1,0 +1,45 @@
+{
+  "name": "polymarket-backtester",
+  "version": "1.0.0",
+  "description": "Late-Stage Convergence Harvesting backtester for Polymarket",
+  "type": "module",
+  "scriptsInfo": {
+    "dev":        "Start dashboard server with hot reload",
+    "start":      "Start dashboard server (production)",
+    "backtest":   "Run backtest with current config.json settings",
+    "sweep":      "Run parameter sweep to find optimal settings",
+    "ingest":     "Fetch market data from configured data source",
+    "ingest:all": "Ingest from all Kaggle data sources",
+    "db:migrate": "Run database migrations",
+    "trade":      "Run trading bot in PAPER mode (no real orders)",
+    "trade:live": "Run trading bot in LIVE mode (real orders!)",
+    "analyze":    "Analyze trade history by category/score/liquidity"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "start": "tsx src/server/index.ts",
+    "backtest": "tsx src/backtest/run.ts",
+    "sweep": "tsx src/backtest/sweep.ts",
+    "ingest": "tsx src/ingestion/run.ts",
+    "ingest:all": "tsx src/ingestion/ingest-all.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "trade": "tsx src/trading/run.ts",
+    "trade:live": "tsx src/trading/run.ts --live",
+    "analyze": "tsx src/trading/analyze.ts"
+  },
+  "dependencies": {
+    "@duneanalytics/client-sdk": "^0.3.5",
+    "@polymarket/clob-client": "^5.1.3",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

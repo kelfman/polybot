@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polymarket Trading Bot - Live</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-tertiary: #1a2332;
+      --bg-card: #151d2e;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --accent-blue: #3b82f6;
+      --accent-purple: #a855f7;
+      --accent-amber: #f59e0b;
+      --accent-cyan: #06b6d4;
+      --border-color: #1e293b;
+      --border-bright: #334155;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-sans: 'DM Sans', sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(34, 197, 94, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34, 197, 94, 0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: -1;
+    }
+    .container { max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
+    
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 1.5rem;
+    }
+    .logo { display: flex; align-items: center; gap: 1rem; }
+    .logo-icon {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.25rem; font-family: var(--font-mono);
+    }
+    .logo-text h1 { font-size: 1.5rem; font-weight: 600; }
+    .logo-text span { font-size: 0.875rem; color: var(--text-muted); }
+    
+    /* Nav */
+    nav { display: flex; gap: 0.5rem; }
+    nav a {
+      padding: 0.5rem 1rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    nav a:hover { color: var(--text-secondary); background: var(--bg-tertiary); }
+    nav a.active { color: var(--accent-green); background: rgba(34, 197, 94, 0.1); }
+    
+    /* Status */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .status-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-dot.running { background: var(--accent-green); animation: pulse 2s infinite; }
+    .status-dot.stopped { background: var(--accent-red); }
+    .status-dot.paper { background: var(--accent-amber); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .status-label { color: var(--text-muted); }
+    .status-value { font-family: var(--font-mono); color: var(--text-primary); }
+    
+    /* Tabs */
+    .main-tabs {
+      display: flex;
+      gap: 0.25rem;
+      background: var(--bg-tertiary);
+      padding: 0.25rem;
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      width: fit-content;
+    }
+    .main-tab {
+      padding: 0.625rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .main-tab:hover { color: var(--text-secondary); }
+    .main-tab.active { background: var(--bg-card); color: var(--text-primary); }
+    
+    /* Tab Content */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    /* Grid */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 1200px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+    
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+    .card-body { padding: 1.25rem; }
+    
+    /* Stats */
+    .stat { text-align: center; padding: 1rem; }
+    .stat-value { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600; }
+    .stat-value.positive { color: var(--accent-green); }
+    .stat-value.negative { color: var(--accent-red); }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-top: 0.25rem; }
+    
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th {
+      text-align: left;
+      padding: 0.625rem 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-color);
+    }
+    td {
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+    tr:hover td { background: var(--bg-tertiary); }
+    .mono { font-family: var(--font-mono); font-size: 0.75rem; }
+    .truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    /* Tags */
+    .tag {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 500;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .tag-crypto { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); }
+    .tag-stocks { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+    .tag-sports { background: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
+    .tag-awards { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+    .tag-politics { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
+    .tag-other { background: rgba(100, 116, 139, 0.2); color: var(--text-muted); }
+    .tag-objective { background: rgba(6, 182, 212, 0.2); color: var(--accent-cyan); }
+    .tag-subjective { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); }
+    
+    /* Status badges */
+    .badge { padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 500; }
+    .badge-open { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+    .badge-pending { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+    .badge-closed { background: rgba(100, 116, 139, 0.2); color: var(--text-muted); }
+    
+    /* Empty state */
+    .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
+    .empty h3 { margin-bottom: 0.5rem; color: var(--text-secondary); }
+    
+    /* Loading */
+    .loading { display: flex; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); }
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--accent-green);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Analysis breakdown */
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px dashed var(--border-color);
+    }
+    .breakdown-row:last-child { border-bottom: none; }
+    .breakdown-label { color: var(--text-muted); }
+    .breakdown-value { font-family: var(--font-mono); }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">PM</div>
+        <div class="logo-text">
+          <h1>Polymarket Trading Bot</h1>
+          <span>Late-Stage Convergence Strategy</span>
+        </div>
+      </div>
+      <nav>
+        <a href="/">Backtest</a>
+        <a href="/live.html" class="active">Live</a>
+      </nav>
+    </header>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="status-bar">
+      <div class="status-item">
+        <div class="status-dot stopped" id="status-dot"></div>
+        <span class="status-value" id="bot-status">Stopped</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Mode:</span>
+        <span class="status-value" id="bot-mode">-</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Balance:</span>
+        <span class="status-value" id="bot-balance">$0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Exposure:</span>
+        <span class="status-value" id="bot-exposure">$0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Positions:</span>
+        <span class="status-value" id="bot-positions">0</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Trades:</span>
+        <span class="status-value" id="bot-trades">0</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">PnL:</span>
+        <span class="status-value" id="bot-pnl">$0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Updated:</span>
+        <span class="status-value" id="last-updated">-</span>
+      </div>
+    </div>
+
+    <!-- Main Tabs -->
+    <div class="main-tabs">
+      <button class="main-tab active" data-tab="positions">Positions</button>
+      <button class="main-tab" data-tab="trades">Trade Log</button>
+      <button class="main-tab" data-tab="analyze">Analyze</button>
+    </div>
+
+    <!-- Tab: Positions -->
+    <div class="tab-content active" id="tab-positions">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Open Positions</span>
+          <span class="mono" id="positions-count">0 positions</span>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Category</th>
+                <th>Type</th>
+                <th>Entry</th>
+                <th>Days</th>
+                <th>Score</th>
+                <th>Size</th>
+                <th>Status</th>
+                <th>PnL</th>
+              </tr>
+            </thead>
+            <tbody id="positions-body">
+              <tr><td colspan="9" class="loading"><div class="spinner"></div>Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Trade Log -->
+    <div class="tab-content" id="tab-trades">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Recent Trades</span>
+          <span class="mono" id="trades-count">0 trades</span>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Market</th>
+                <th>Category</th>
+                <th>Type</th>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>Days</th>
+                <th>Score</th>
+                <th>Liq</th>
+                <th>Status</th>
+                <th>PnL</th>
+              </tr>
+            </thead>
+            <tbody id="trades-body">
+              <tr><td colspan="11" class="loading"><div class="spinner"></div>Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Analyze -->
+    <div class="tab-content" id="tab-analyze">
+      <div class="grid-4" style="margin-bottom: 1.5rem;">
+        <div class="card">
+          <div class="card-body stat">
+            <div class="stat-value" id="analyze-total">0</div>
+            <div class="stat-label">Total Trades</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body stat">
+            <div class="stat-value" id="analyze-winrate">-</div>
+            <div class="stat-label">Win Rate</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body stat">
+            <div class="stat-value" id="analyze-pnl">$0</div>
+            <div class="stat-label">Total PnL</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body stat">
+            <div class="stat-value" id="analyze-avg">$0</div>
+            <div class="stat-label">Avg PnL</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Performance by Category</span>
+          </div>
+          <div class="card-body" id="analyze-category">
+            <div class="empty">No closed trades yet</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Objective vs Subjective</span>
+          </div>
+          <div class="card-body" id="analyze-objective">
+            <div class="empty">No closed trades yet</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top: 1.5rem;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Performance by Score</span>
+          </div>
+          <div class="card-body" id="analyze-score">
+            <div class="empty">No closed trades yet</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Performance by Liquidity</span>
+          </div>
+          <div class="card-body" id="analyze-liquidity">
+            <div class="empty">No closed trades yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api/live';
+    
+    // Tab switching
+    document.querySelectorAll('.main-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Fetch and update status
+    async function updateStatus() {
+      try {
+        const res = await fetch(API_BASE + '/status');
+        const data = await res.json();
+        
+        const dot = document.getElementById('status-dot');
+        dot.className = 'status-dot ' + (data.isRunning ? (data.mode === 'paper' ? 'paper' : 'running') : 'stopped');
+        
+        document.getElementById('bot-status').textContent = data.isRunning ? 'Running' : 'Stopped';
+        document.getElementById('bot-mode').textContent = data.mode || '-';
+        document.getElementById('bot-balance').textContent = '$' + (data.balance || 0).toFixed(2);
+        document.getElementById('bot-exposure').textContent = '$' + (data.totalExposure || 0).toFixed(2);
+        document.getElementById('bot-positions').textContent = data.openPositions || 0;
+        document.getElementById('bot-trades').textContent = data.tradesPlaced || 0;
+        
+        const pnl = data.totalPnl || 0;
+        const pnlEl = document.getElementById('bot-pnl');
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+        pnlEl.className = 'status-value ' + (pnl >= 0 ? 'positive' : 'negative');
+        
+        if (data.lastUpdated) {
+          const d = new Date(data.lastUpdated);
+          document.getElementById('last-updated').textContent = d.toLocaleTimeString();
+        }
+      } catch (e) {
+        console.error('Failed to fetch status:', e);
+      }
+    }
+
+    // Fetch positions
+    async function updatePositions() {
+      try {
+        const res = await fetch(API_BASE + '/positions');
+        const positions = await res.json();
+        
+        document.getElementById('positions-count').textContent = positions.length + ' positions';
+        
+        const tbody = document.getElementById('positions-body');
+        if (positions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="empty">No open positions</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = positions.map(p => `
+          <tr>
+            <td class="truncate" title="${p.question || p.market_id}">${p.question || p.market_id.slice(0, 20) + '...'}</td>
+            <td><span class="tag tag-${p.category || 'other'}">${p.category || '?'}</span></td>
+            <td><span class="tag ${p.is_objective ? 'tag-objective' : 'tag-subjective'}">${p.is_objective ? '📐' : '🎲'}</span></td>
+            <td class="mono">${((p.entry_price || 0) * 100).toFixed(0)}¢</td>
+            <td class="mono">${p.days_to_resolution ? p.days_to_resolution.toFixed(1) : '-'}</td>
+            <td class="mono">${p.qualification_score || '-'}</td>
+            <td class="mono">$${(p.size_usd || 0).toFixed(2)}</td>
+            <td><span class="badge badge-${p.status}">${p.status}</span></td>
+            <td class="mono ${(p.pnl || 0) >= 0 ? 'positive' : 'negative'}">${p.pnl ? '$' + p.pnl.toFixed(2) : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        console.error('Failed to fetch positions:', e);
+      }
+    }
+
+    // Fetch trades
+    async function updateTrades() {
+      try {
+        const res = await fetch(API_BASE + '/trades?limit=50');
+        const trades = await res.json();
+        
+        document.getElementById('trades-count').textContent = trades.length + ' trades';
+        
+        const tbody = document.getElementById('trades-body');
+        if (trades.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="11" class="empty">No trades yet</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = trades.map(t => {
+          const time = t.entry_time ? new Date(t.entry_time).toLocaleString() : '-';
+          return `
+            <tr>
+              <td class="mono" style="font-size: 0.7rem;">${time}</td>
+              <td class="truncate" title="${t.question || t.market_id}">${t.question || t.market_id?.slice(0, 15) + '...'}</td>
+              <td><span class="tag tag-${t.category || 'other'}">${t.category || '?'}</span></td>
+              <td><span class="tag ${t.is_objective ? 'tag-objective' : 'tag-subjective'}">${t.is_objective ? '📐' : '🎲'}</span></td>
+              <td class="mono">${t.entry_price ? (t.entry_price * 100).toFixed(0) + '¢' : '-'}</td>
+              <td class="mono">${t.exit_price ? (t.exit_price * 100).toFixed(0) + '¢' : '-'}</td>
+              <td class="mono">${t.days_to_resolution ? t.days_to_resolution.toFixed(1) : '-'}</td>
+              <td class="mono">${t.qualification_score || '-'}</td>
+              <td class="mono">${t.liquidity ? '$' + Math.round(t.liquidity) : '-'}</td>
+              <td><span class="badge badge-${t.status}">${t.status}</span></td>
+              <td class="mono ${(t.pnl || 0) >= 0 ? 'positive' : 'negative'}">${t.pnl != null ? '$' + t.pnl.toFixed(2) : '-'}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Failed to fetch trades:', e);
+      }
+    }
+
+    // Fetch analysis
+    async function updateAnalysis() {
+      try {
+        const res = await fetch(API_BASE + '/analyze');
+        const data = await res.json();
+        
+        // Overall stats
+        const o = data.overall || {};
+        document.getElementById('analyze-total').textContent = o.total_trades || 0;
+        document.getElementById('analyze-winrate').textContent = o.win_rate ? o.win_rate + '%' : '-';
+        
+        const pnl = o.total_pnl || 0;
+        const pnlEl = document.getElementById('analyze-pnl');
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+        pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'positive' : 'negative');
+        
+        document.getElementById('analyze-avg').textContent = '$' + (o.avg_pnl || 0).toFixed(2);
+        
+        // By category
+        const catEl = document.getElementById('analyze-category');
+        if (data.byCategory && data.byCategory.length > 0) {
+          catEl.innerHTML = data.byCategory.map(c => `
+            <div class="breakdown-row">
+              <span class="breakdown-label"><span class="tag tag-${c.category}">${c.category}</span></span>
+              <span class="breakdown-value">${c.trade_count} trades | ${c.win_rate || 0}% win | $${c.total_pnl || 0}</span>
+            </div>
+          `).join('');
+        } else {
+          catEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+        }
+        
+        // By objective
+        const objEl = document.getElementById('analyze-objective');
+        if (data.byObjective && data.byObjective.length > 0) {
+          objEl.innerHTML = data.byObjective.map(o => `
+            <div class="breakdown-row">
+              <span class="breakdown-label">${o.outcome_type}</span>
+              <span class="breakdown-value">${o.trade_count} trades | ${o.win_rate || 0}% win | $${o.total_pnl || 0}</span>
+            </div>
+          `).join('');
+        } else {
+          objEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+        }
+        
+        // By score
+        const scoreEl = document.getElementById('analyze-score');
+        if (data.byScore && data.byScore.length > 0) {
+          scoreEl.innerHTML = data.byScore.map(s => `
+            <div class="breakdown-row">
+              <span class="breakdown-label">Score ${s.score_range}</span>
+              <span class="breakdown-value">${s.trade_count} trades | ${s.win_rate || 0}% win | $${s.total_pnl || 0}</span>
+            </div>
+          `).join('');
+        } else {
+          scoreEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+        }
+        
+        // By liquidity
+        const liqEl = document.getElementById('analyze-liquidity');
+        if (data.byLiquidity && data.byLiquidity.length > 0) {
+          liqEl.innerHTML = data.byLiquidity.map(l => `
+            <div class="breakdown-row">
+              <span class="breakdown-label">${l.liquidity_range}</span>
+              <span class="breakdown-value">${l.trade_count} trades | ${l.win_rate || 0}% win | $${l.total_pnl || 0}</span>
+            </div>
+          `).join('');
+        } else {
+          liqEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+        }
+      } catch (e) {
+        console.error('Failed to fetch analysis:', e);
+      }
+    }
+
+    // Initial load
+    updateStatus();
+    updatePositions();
+    updateTrades();
+    updateAnalysis();
+
+    // Refresh periodically
+    setInterval(updateStatus, 10000);
+    setInterval(updatePositions, 30000);
+    setInterval(updateTrades, 30000);
+    setInterval(updateAnalysis, 60000);
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,40 @@
+{
+  "strategy": {
+    "name": "late-stage-convergence",
+    "entryPriceMin": 0.70,
+    "entryPriceMax": 0.90,
+    "exitPriceTarget": 0.92,
+    "timeToResolutionDaysMin": 1,
+    "timeToResolutionDaysMax": 5,
+    "holdToResolution": true,
+    "maxVolatility": "low"
+  },
+  "classification": {
+    "volatility": {
+      "enabled": true,
+      "highVolatilityThreshold": 30,
+      "swingCountThreshold": 3
+    },
+    "llmConvergence": {
+      "enabled": false,
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "cacheResults": true
+    }
+  },
+  "risk": {
+    "positionSizeUsd": 10,
+    "maxPositions": 5,
+    "maxExposureUsd": 50,
+    "stopLossPercent": null
+  },
+  "backtest": {
+    "startDate": "2025-07-01",
+    "endDate": null
+  },
+  "dataSource": {
+    "primary": "kaggle-ndjson",
+    "fallback": "kaggle",
+    "csvPath": "./data/kaggle/Polymarket_dataset/Polymarket_dataset"
+  }
+}
