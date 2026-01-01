@@ -19,6 +19,7 @@ import { OrderExecutor, createExecutor } from './executor.js';
 import { getDb } from '../db/client.js';
 import { getConfig } from '../config/index.js';
 import { LIVE_TRADING_SCHEMA } from './schema.js';
+import { ensureApproved, debugWalletStatus } from './deposit.js';
 
 export interface BotConfig {
   mode: 'live' | 'paper';
@@ -64,11 +65,16 @@ export class TradingBot {
 
   constructor(config: Partial<BotConfig> = {}) {
     this.runId = `run_${Date.now()}_${randomBytes(4).toString('hex')}`;
+    
+    // Load trading config from config.json
+    const appConfig = getConfig();
+    const tradingConfig = appConfig.trading;
+    
     this.config = {
       mode: config.mode || 'paper',
-      scanIntervalMs: config.scanIntervalMs || 60_000, // 1 minute
-      stateCheckIntervalMs: config.stateCheckIntervalMs || 30_000, // 30 seconds
-      maxTradesPerDay: config.maxTradesPerDay || 10,
+      scanIntervalMs: config.scanIntervalMs || tradingConfig.scanIntervalMinutes * 60_000,
+      stateCheckIntervalMs: config.stateCheckIntervalMs || tradingConfig.stateCheckIntervalSeconds * 1000,
+      maxTradesPerDay: config.maxTradesPerDay || tradingConfig.maxTradesPerDay,
       enableNotifications: config.enableNotifications || false,
     };
 
@@ -105,8 +111,22 @@ export class TradingBot {
     
     // Create components
     this.stateManager = createStateManager(this.client);
-    this.scanner = createScanner(this.client);
+    this.scanner = createScanner(this.client, this.stateManager);
     this.executor = createExecutor(this.client, this.stateManager, this.config.mode === 'paper');
+
+    // Check and set up USDC approvals (CRITICAL for live trading)
+    const proxyAddress = process.env.POLYMARKET_PROXY_ADDRESS || '';
+    const privateKey = process.env.POLYMARKET_PRIVATE_KEY || '';
+    
+    await debugWalletStatus(proxyAddress);
+    
+    if (this.config.mode === 'live') {
+      console.log('[Bot] Ensuring USDC approvals for live trading...');
+      const approved = await ensureApproved(proxyAddress, privateKey);
+      if (!approved) {
+        throw new Error('Failed to set up USDC approvals - cannot proceed with live trading');
+      }
+    }
 
     // Run initial reconciliation
     console.log('\n[Bot] Running initial reconciliation...');
@@ -243,6 +263,8 @@ export class TradingBot {
     const apiKey = process.env.POLYMARKET_API_KEY;
     const apiSecret = process.env.POLYMARKET_API_SECRET;
     const passphrase = process.env.POLYMARKET_API_PASSPHRASE;
+    const proxyAddress = process.env.POLYMARKET_PROXY_ADDRESS;
+    const signatureType = parseInt(process.env.POLYMARKET_SIGNATURE_TYPE || '0', 10);
 
     if (!privateKey) {
       throw new Error('POLYMARKET_PRIVATE_KEY not set');
@@ -250,14 +272,23 @@ export class TradingBot {
     if (!apiKey || !apiSecret || !passphrase) {
       throw new Error('Polymarket API credentials not set');
     }
+    if (!proxyAddress) {
+      throw new Error('POLYMARKET_PROXY_ADDRESS not set');
+    }
 
     const wallet = new Wallet(privateKey);
     
+    console.log(`[Bot] Signer address: ${wallet.address}`);
+    console.log(`[Bot] Funder/Proxy address: ${proxyAddress}`);
+    
+    // ClobClient constructor: host, chainId, signer, creds, signatureType, funderAddress
     const client = new ClobClient(
       CLOB_HOST,
       Chain.POLYGON,
       wallet,
-      { key: apiKey, secret: apiSecret, passphrase }
+      { key: apiKey, secret: apiSecret, passphrase },
+      signatureType,      // Signature type (0 = EOA, 1 = Poly proxy, 2 = Gnosis safe)
+      proxyAddress        // Funder address (proxy wallet with USDC)
     );
 
     // Verify connection
@@ -277,8 +308,27 @@ export class TradingBot {
     if (this.killSwitch) return;
 
     try {
-      console.log('\n[Bot] Running market scan...');
       this.status.lastScanAt = new Date().toISOString();
+      const config = getConfig();
+      
+      // Check capacity BEFORE expensive scan (exposure-based limit only)
+      const state = await this.stateManager!.getState();
+      const availableExposure = config.risk.maxExposureUsd - this.status.currentExposure;
+      const maxNewPositions = Math.floor(availableExposure / config.risk.positionSizeUsd);
+      
+      if (availableExposure < config.risk.positionSizeUsd) {
+        console.log('\n[Bot] ═══════════════════════════════════════════════════════');
+        console.log(`[Bot] 💸 MAX EXPOSURE: $${this.status.currentExposure.toFixed(2)}/$${config.risk.maxExposureUsd}`);
+        console.log(`[Bot] 💰 Balance: $${state.balance.toFixed(2)} | Positions: ${state.positions.length}`);
+        console.log(`[Bot] Need $${config.risk.positionSizeUsd} but only $${availableExposure.toFixed(2)} available`);
+        console.log('[Bot] Waiting for positions to close...');
+        this.logPositionSummary(state.positions);
+        console.log('[Bot] ═══════════════════════════════════════════════════════\n');
+        return;
+      }
+
+      console.log('\n[Bot] Running market scan...');
+      console.log(`[Bot] Exposure: $${this.status.currentExposure.toFixed(2)}/$${config.risk.maxExposureUsd} | Room for ${maxNewPositions} more positions`);
 
       const scanResult = await this.scanner!.scan();
       
@@ -289,9 +339,17 @@ export class TradingBot {
 
       console.log(`[Bot] Found ${scanResult.qualifyingMarkets.length} qualifying markets`);
 
-      // Process top opportunities
-      for (const market of scanResult.qualifyingMarkets.slice(0, 3)) {
+      // Only process as many as we have exposure room for (max 3 per cycle)
+      const marketsToProcess = Math.min(maxNewPositions, 3);
+      for (const market of scanResult.qualifyingMarkets.slice(0, marketsToProcess)) {
         if (this.killSwitch) break;
+        
+        // Re-check exposure after each order
+        const currentExposure = await this.stateManager!.getTotalExposure();
+        if (currentExposure + config.risk.positionSizeUsd > config.risk.maxExposureUsd) {
+          console.log('[Bot] Max exposure reached during processing');
+          break;
+        }
         
         await this.processOpportunity(market);
       }
@@ -403,6 +461,26 @@ export class TradingBot {
 
     } catch (error) {
       this.logError(`State check failed: ${error}`);
+    }
+  }
+
+  /**
+   * Log a summary of current positions with resolution timing
+   */
+  private logPositionSummary(positions: Array<{ marketId: string; side: string; size: number; currentValue: number }>): void {
+    if (positions.length === 0) return;
+    
+    console.log('[Bot] ───────────────────────────────────────────────────────');
+    console.log('[Bot] Current positions:');
+    
+    for (const pos of positions.slice(0, 5)) { // Show max 5
+      const value = pos.currentValue?.toFixed(2) || '?';
+      const marketIdShort = pos.marketId.slice(0, 10) + '...';
+      console.log(`[Bot]   ${pos.side} ${pos.size.toFixed(1)} shares | $${value} | ${marketIdShort}`);
+    }
+    
+    if (positions.length > 5) {
+      console.log(`[Bot]   ... and ${positions.length - 5} more`);
     }
   }
 

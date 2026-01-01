@@ -37,7 +37,6 @@ export interface OrderResult {
 export interface ExecutorConfig {
   client: ClobClient;
   stateManager: StateManager;
-  maxPositions: number;
   maxExposureUsd: number;
   positionSizeUsd: number;
   dryRun: boolean;          // If true, don't actually place orders
@@ -111,18 +110,7 @@ export class OrderExecutor {
       };
     }
 
-    // ===== SAFETY CHECK 4: Position limits =====
-    const state = await this.stateManager.getState();
-    
-    if (state.positions.length >= this.config.maxPositions) {
-      return {
-        success: false,
-        error: `Max positions (${this.config.maxPositions}) reached`,
-        idempotencyKey,
-      };
-    }
-
-    // ===== SAFETY CHECK 5: Exposure limits =====
+    // ===== SAFETY CHECK 4: Exposure limits =====
     const currentExposure = await this.stateManager.getTotalExposure();
     
     if (currentExposure + request.sizeUsd > this.config.maxExposureUsd) {
@@ -320,7 +308,6 @@ export function createExecutor(
   return new OrderExecutor({
     client,
     stateManager,
-    maxPositions: config.risk.maxPositions,
     maxExposureUsd: config.risk.maxExposureUsd,
     positionSizeUsd: config.risk.positionSizeUsd,
     dryRun,

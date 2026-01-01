@@ -24,9 +24,13 @@
   },
   "risk": {
     "positionSizeUsd": 10,
-    "maxPositions": 5,
-    "maxExposureUsd": 50,
+    "maxExposureUsd": 100,
     "stopLossPercent": null
+  },
+  "trading": {
+    "scanIntervalMinutes": 5,
+    "stateCheckIntervalSeconds": 30,
+    "maxTradesPerDay": 10
   },
   "backtest": {
     "startDate": "2025-07-01",

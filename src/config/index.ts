@@ -38,7 +38,6 @@ const ClassificationSchema = z.object({
 // Schema for risk management
 const RiskSchema = z.object({
   positionSizeUsd: z.number().positive(),
-  maxPositions: z.number().int().positive(),
   maxExposureUsd: z.number().positive(),
   stopLossPercent: z.number().min(0).max(100).nullable(),
 });
@@ -56,6 +55,17 @@ const DataSourceSchema = z.object({
   csvPath: z.string(),
 });
 
+// Schema for live trading settings
+const TradingSchema = z.object({
+  scanIntervalMinutes: z.number().positive().default(5),
+  stateCheckIntervalSeconds: z.number().positive().default(30),
+  maxTradesPerDay: z.number().int().positive().default(10),
+}).default({
+  scanIntervalMinutes: 5,
+  stateCheckIntervalSeconds: 30,
+  maxTradesPerDay: 10,
+});
+
 // Complete config schema
 const ConfigSchema = z.object({
   strategy: StrategySchema,
@@ -63,6 +73,7 @@ const ConfigSchema = z.object({
   risk: RiskSchema,
   backtest: BacktestSchema,
   dataSource: DataSourceSchema,
+  trading: TradingSchema,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

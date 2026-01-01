@@ -12,6 +12,7 @@
 
 import { ClobClient, type OrderBookSummary } from '@polymarket/clob-client';
 import { getConfig, type StrategyConfig } from '../config/index.js';
+import { type StateManager } from './state.js';
 
 // Market categories for diversification
 export type MarketCategory = 
@@ -125,10 +126,12 @@ function isObjectiveOutcome(question: string): boolean {
 export class MarketScanner {
   private client: ClobClient;
   private config: StrategyConfig;
+  private stateManager: StateManager | null;
 
-  constructor(client: ClobClient) {
+  constructor(client: ClobClient, stateManager?: StateManager) {
     this.client = client;
     this.config = getConfig().strategy;
+    this.stateManager = stateManager || null;
   }
 
   /**
@@ -147,8 +150,16 @@ export class MarketScanner {
       'too_far_from_resolution': 0,
       'too_close_to_resolution': 0,
       'closed_or_inactive': 0,
+      'already_have_position': 0,
       'other': 0,
     };
+    
+    // Get existing positions to filter out
+    let existingPositionMarkets: Set<string> = new Set();
+    if (this.stateManager) {
+      const state = await this.stateManager.getState();
+      existingPositionMarkets = new Set(state.positions.map(p => p.marketId));
+    }
     
     let nearMisses: Array<{ question: string; reason: string; price?: number; days?: number }> = [];
 
@@ -164,6 +175,12 @@ export class MarketScanner {
       // Check each market for qualification
       for (const market of markets) {
         try {
+          // Skip markets where we already have a position
+          if (existingPositionMarkets.has(market.conditionId)) {
+            rejectionReasons['already_have_position']++;
+            continue;
+          }
+          
           const qualification = this.checkQualification(market);
           
           if (qualification.qualifies) {
@@ -289,7 +306,8 @@ export class MarketScanner {
     // Print summary
     console.log('[Scanner] ───────────────────────────────────────────────────────');
     console.log('[Scanner] SCAN SUMMARY:');
-    console.log(`[Scanner]   Markets scanned: ${rejectionReasons['closed_or_inactive'] + rejectionReasons['not_binary'] + rejectionReasons['price_too_low'] + rejectionReasons['price_too_high'] + rejectionReasons['too_far_from_resolution'] + rejectionReasons['too_close_to_resolution'] + rejectionReasons['other'] + qualifyingMarkets.length}`);
+    const totalScanned = rejectionReasons['closed_or_inactive'] + rejectionReasons['not_binary'] + rejectionReasons['price_too_low'] + rejectionReasons['price_too_high'] + rejectionReasons['too_far_from_resolution'] + rejectionReasons['too_close_to_resolution'] + rejectionReasons['already_have_position'] + rejectionReasons['other'] + qualifyingMarkets.length;
+    console.log(`[Scanner]   Markets scanned: ${totalScanned}`);
     console.log(`[Scanner]   ✅ Qualifying: ${qualifyingMarkets.length}`);
     console.log(`[Scanner]   ❌ Rejected:`);
     console.log(`[Scanner]      - Price too low (<${this.config.entryPriceMin}): ${rejectionReasons['price_too_low']}`);
@@ -297,6 +315,9 @@ export class MarketScanner {
     console.log(`[Scanner]      - Too far from resolution: ${rejectionReasons['too_far_from_resolution']}`);
     console.log(`[Scanner]      - Too close to resolution: ${rejectionReasons['too_close_to_resolution']}`);
     console.log(`[Scanner]      - Not binary: ${rejectionReasons['not_binary']}`);
+    if (rejectionReasons['already_have_position'] > 0) {
+      console.log(`[Scanner]      - Already have position: ${rejectionReasons['already_have_position']}`);
+    }
     
     // Category breakdown
     console.log('[Scanner] ───────────────────────────────────────────────────────');
@@ -563,7 +584,7 @@ export class MarketScanner {
 /**
  * Create scanner from CLOB client
  */
-export function createScanner(client: ClobClient): MarketScanner {
-  return new MarketScanner(client);
+export function createScanner(client: ClobClient, stateManager?: StateManager): MarketScanner {
+  return new MarketScanner(client, stateManager);
 }
 
