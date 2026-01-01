@@ -312,10 +312,16 @@ export class TradingBot {
       const config = getConfig();
       
       // Auto-close near-certain winners to free up capital
-      await this.checkForAutoClose();
+      const closedCount = await this.checkForAutoClose();
+      
+      // If we closed positions, force state refresh to get updated balance/exposure
+      if (closedCount > 0) {
+        console.log('[Bot] Refreshing state after auto-close...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for settlement
+      }
       
       // Check capacity BEFORE expensive scan (exposure-based limit only)
-      const state = await this.stateManager!.getState();
+      const state = await this.stateManager!.getState(closedCount > 0);
       const availableExposure = config.risk.maxExposureUsd - this.status.currentExposure;
       const maxNewPositions = Math.floor(availableExposure / config.risk.positionSizeUsd);
       
@@ -499,14 +505,16 @@ export class TradingBot {
    * This is configurable via trading.autoCloseThreshold in config.json
    * - 0.99 = close positions at 99¢ (1% haircut)
    * - null = disabled
+   * 
+   * @returns Number of positions successfully closed
    */
-  private async checkForAutoClose(): Promise<void> {
+  private async checkForAutoClose(): Promise<number> {
     const config = getConfig();
     const threshold = config.trading.autoCloseThreshold;
     
     // Skip if disabled
     if (threshold === null || threshold === undefined) {
-      return;
+      return 0;
     }
 
     const state = await this.stateManager!.getState();
@@ -524,11 +532,9 @@ export class TradingBot {
     for (const pos of state.positions) {
       const price = pos.currentPrice || 0;
       
-      // For YES positions: close if price >= threshold (e.g., 0.99)
-      // For NO positions: close if price <= 1 - threshold (e.g., 0.01)
-      const shouldClose = 
-        (pos.side === 'YES' && price >= threshold) ||
-        (pos.side === 'NO' && price <= (1 - threshold));
+      // Close if the position's current price is >= threshold
+      // Works for both YES and NO: if you own it and it's at 99¢, you're winning
+      const shouldClose = price >= threshold;
       
       if (shouldClose) {
         autoCloseTargets.push({
@@ -543,11 +549,13 @@ export class TradingBot {
     }
 
     if (autoCloseTargets.length === 0) {
-      return;
+      return 0;
     }
 
     console.log(`\n[Bot] 🎯 AUTO-CLOSE: Found ${autoCloseTargets.length} near-certain winners (threshold: ${(threshold * 100).toFixed(0)}¢)`);
 
+    let closedCount = 0;
+    
     for (const target of autoCloseTargets) {
       if (this.killSwitch) break;
 
@@ -563,6 +571,7 @@ export class TradingBot {
       if (result.success) {
         console.log(`[Bot] ✅ Auto-closed: ${result.orderId}`);
         this.status.tradesClosed++;
+        closedCount++;
         
         // Update trade in database
         const db = getDb();
@@ -581,7 +590,8 @@ export class TradingBot {
       }
     }
 
-    console.log('[Bot] Auto-close check complete\n');
+    console.log(`[Bot] Auto-close complete: ${closedCount} positions closed\n`);
+    return closedCount;
   }
 
   private logError(message: string): void {
