@@ -60,10 +60,12 @@ const TradingSchema = z.object({
   scanIntervalMinutes: z.number().positive().default(5),
   stateCheckIntervalSeconds: z.number().positive().default(30),
   maxTradesPerDay: z.number().int().positive().default(10),
+  autoCloseThreshold: z.number().min(0.90).max(1.0).nullable().default(0.99), // null = disabled, 0.99 = close at 99¢
 }).default({
   scanIntervalMinutes: 5,
   stateCheckIntervalSeconds: 30,
   maxTradesPerDay: 10,
+  autoCloseThreshold: 0.99,
 });
 
 // Complete config schema

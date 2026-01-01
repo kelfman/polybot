@@ -30,7 +30,8 @@
   "trading": {
     "scanIntervalMinutes": 5,
     "stateCheckIntervalSeconds": 30,
-    "maxTradesPerDay": 10
+    "maxTradesPerDay": 10,
+    "autoCloseThreshold": 0.99
   },
   "backtest": {
     "startDate": "2025-07-01",

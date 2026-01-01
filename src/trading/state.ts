@@ -24,8 +24,10 @@ export interface Position {
   size: number;           // Number of shares
   avgEntryPrice: number;
   currentValue: number;
+  currentPrice: number;   // Current price of the position (for auto-close)
   unrealizedPnl: number;
   entryTime: string;
+  question?: string;      // Market question (for logging)
 }
 
 export interface AccountState {
@@ -374,8 +376,10 @@ export class StateManager {
         size: pos.size || 0,
         avgEntryPrice: pos.avgPrice || 0,
         currentValue: pos.currentValue || (pos.size * pos.curPrice) || 0,
+        currentPrice: pos.curPrice || 0,  // Current market price
         unrealizedPnl: pos.cashPnl || 0,
         entryTime: new Date().toISOString(), // Data API doesn't provide entry time
+        question: pos.title || undefined,    // Market question if available
       }));
     } catch (error) {
       console.warn('[StateManager] Failed to fetch positions from Data API:', error);
@@ -449,8 +453,10 @@ export class StateManager {
         size: pos.totalSize,
         avgEntryPrice,
         currentValue,
+        currentPrice,  // Current market price
         unrealizedPnl,
         entryTime: pos.firstTradeTime,
+        question: undefined,  // Not available from trades
       });
     }
 

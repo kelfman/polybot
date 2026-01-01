@@ -567,11 +567,11 @@
           catEl.innerHTML = data.byCategory.map(c => `
             <div class="breakdown-row">
               <span class="breakdown-label"><span class="tag tag-${c.category}">${c.category}</span></span>
-              <span class="breakdown-value">${c.trade_count} trades | ${c.win_rate || 0}% win | $${c.total_pnl || 0}</span>
+              <span class="breakdown-value">${c.trade_count} trades | Score: ${c.avg_score || '-'} | $${c.total_exposure || 0}</span>
             </div>
           `).join('');
         } else {
-          catEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+          catEl.innerHTML = '<div class="empty">No trades yet</div>';
         }
         
         // By objective
@@ -580,11 +580,11 @@
           objEl.innerHTML = data.byObjective.map(o => `
             <div class="breakdown-row">
               <span class="breakdown-label">${o.outcome_type}</span>
-              <span class="breakdown-value">${o.trade_count} trades | ${o.win_rate || 0}% win | $${o.total_pnl || 0}</span>
+              <span class="breakdown-value">${o.trade_count} trades | Avg Score: ${o.avg_score || '-'} | $${o.total_exposure || 0}</span>
             </div>
           `).join('');
         } else {
-          objEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+          objEl.innerHTML = '<div class="empty">No trades yet</div>';
         }
         
         // By score
@@ -593,11 +593,11 @@
           scoreEl.innerHTML = data.byScore.map(s => `
             <div class="breakdown-row">
               <span class="breakdown-label">Score ${s.score_range}</span>
-              <span class="breakdown-value">${s.trade_count} trades | ${s.win_rate || 0}% win | $${s.total_pnl || 0}</span>
+              <span class="breakdown-value">${s.trade_count} trades | $${s.total_exposure || 0} exposure</span>
             </div>
           `).join('');
         } else {
-          scoreEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+          scoreEl.innerHTML = '<div class="empty">No trades yet</div>';
         }
         
         // By liquidity
@@ -606,11 +606,11 @@
           liqEl.innerHTML = data.byLiquidity.map(l => `
             <div class="breakdown-row">
               <span class="breakdown-label">${l.liquidity_range}</span>
-              <span class="breakdown-value">${l.trade_count} trades | ${l.win_rate || 0}% win | $${l.total_pnl || 0}</span>
+              <span class="breakdown-value">${l.trade_count} trades | $${l.total_exposure || 0} exposure</span>
             </div>
           `).join('');
         } else {
-          liqEl.innerHTML = '<div class="empty">No closed trades yet</div>';
+          liqEl.innerHTML = '<div class="empty">No trades yet</div>';
         }
       } catch (e) {
         console.error('Failed to fetch analysis:', e);

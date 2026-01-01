@@ -182,38 +182,36 @@ router.get('/analyze', (_req: Request, res: Response) => {
       FROM live_trades
     `).get();
     
-    // By category
+    // By category (all trades, for visibility before resolution)
     const byCategory = db.prepare(`
       SELECT 
         category,
         COUNT(*) as trade_count,
-        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
-        SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END) as losses,
-        ROUND(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) as win_rate,
-        ROUND(AVG(pnl), 2) as avg_pnl,
-        ROUND(SUM(pnl), 2) as total_pnl,
+        SUM(CASE WHEN status = 'closed' AND pnl > 0 THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN status = 'closed' AND pnl <= 0 THEN 1 ELSE 0 END) as losses,
+        SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_count,
         ROUND(AVG(qualification_score), 0) as avg_score,
-        ROUND(AVG(liquidity), 0) as avg_liquidity
+        ROUND(AVG(liquidity), 0) as avg_liquidity,
+        ROUND(SUM(size_usd), 2) as total_exposure
       FROM live_trades 
-      WHERE status = 'closed' AND category IS NOT NULL
+      WHERE category IS NOT NULL
       GROUP BY category
-      ORDER BY total_pnl DESC
+      ORDER BY trade_count DESC
     `).all();
     
-    // By objective vs subjective
+    // By objective vs subjective (all trades)
     const byObjective = db.prepare(`
       SELECT 
-        CASE WHEN is_objective = 1 THEN 'Objective' ELSE 'Subjective' END as outcome_type,
+        CASE WHEN is_objective = 1 THEN 'Objective 📐' ELSE 'Subjective 🎲' END as outcome_type,
         COUNT(*) as trade_count,
-        ROUND(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) as win_rate,
-        ROUND(AVG(pnl), 2) as avg_pnl,
-        ROUND(SUM(pnl), 2) as total_pnl
+        ROUND(AVG(qualification_score), 0) as avg_score,
+        ROUND(SUM(size_usd), 2) as total_exposure
       FROM live_trades 
-      WHERE status = 'closed' AND is_objective IS NOT NULL
+      WHERE is_objective IS NOT NULL
       GROUP BY is_objective
     `).all();
     
-    // By score range
+    // By score range (all trades)
     const byScore = db.prepare(`
       SELECT 
         CASE 
@@ -223,16 +221,14 @@ router.get('/analyze', (_req: Request, res: Response) => {
           ELSE '<60'
         END as score_range,
         COUNT(*) as trade_count,
-        ROUND(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) as win_rate,
-        ROUND(AVG(pnl), 2) as avg_pnl,
-        ROUND(SUM(pnl), 2) as total_pnl
+        ROUND(SUM(size_usd), 2) as total_exposure
       FROM live_trades 
-      WHERE status = 'closed' AND qualification_score IS NOT NULL
+      WHERE qualification_score IS NOT NULL
       GROUP BY score_range
-      ORDER BY score_range DESC
+      ORDER BY qualification_score DESC
     `).all();
     
-    // By liquidity range
+    // By liquidity range (all trades)
     const byLiquidity = db.prepare(`
       SELECT 
         CASE 
@@ -241,11 +237,9 @@ router.get('/analyze', (_req: Request, res: Response) => {
           ELSE 'Low (<$1k)'
         END as liquidity_range,
         COUNT(*) as trade_count,
-        ROUND(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) as win_rate,
-        ROUND(AVG(pnl), 2) as avg_pnl,
-        ROUND(SUM(pnl), 2) as total_pnl
+        ROUND(SUM(size_usd), 2) as total_exposure
       FROM live_trades 
-      WHERE status = 'closed' AND liquidity IS NOT NULL
+      WHERE liquidity IS NOT NULL
       GROUP BY liquidity_range
     `).all();
     

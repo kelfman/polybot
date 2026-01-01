@@ -311,6 +311,9 @@ export class TradingBot {
       this.status.lastScanAt = new Date().toISOString();
       const config = getConfig();
       
+      // Auto-close near-certain winners to free up capital
+      await this.checkForAutoClose();
+      
       // Check capacity BEFORE expensive scan (exposure-based limit only)
       const state = await this.stateManager!.getState();
       const availableExposure = config.risk.maxExposureUsd - this.status.currentExposure;
@@ -383,11 +386,11 @@ export class TradingBot {
     });
 
     if (result.success) {
-      console.log(`[Bot] ✅ Order placed: ${result.orderId}`);
+      console.log(`[Bot] ✅ Order filled: ${result.orderId}`);
       this.status.tradesPlaced++;
       
-      // Log trade with full market profile
-      this.logTrade(market, result.orderId || null, config.risk.positionSizeUsd);
+      // Log trade as 'open' since FOK orders fill immediately
+      this.logTrade(market, result.orderId || null, config.risk.positionSizeUsd, 'open');
     } else {
       console.log(`[Bot] ❌ Order failed: ${result.error}`);
     }
@@ -396,7 +399,12 @@ export class TradingBot {
   /**
    * Log a trade to the database with full market profile for later analysis
    */
-  private logTrade(market: QualifyingMarket, orderId: string | null, sizeUsd: number): void {
+  private logTrade(
+    market: QualifyingMarket, 
+    orderId: string | null, 
+    sizeUsd: number,
+    status: 'pending' | 'open' | 'closed' = 'open'
+  ): void {
     const db = getDb();
     
     db.prepare(`
@@ -413,7 +421,7 @@ export class TradingBot {
       market.currentYesPrice,
       sizeUsd / market.currentYesPrice, // size in shares
       sizeUsd,
-      'pending',
+      status,
       new Date().toISOString(),
       orderId,
       market.category,
@@ -424,7 +432,7 @@ export class TradingBot {
       market.qualificationScore
     );
     
-    console.log(`[Bot] Trade logged: ${market.category} | ${market.isObjective ? 'Objective' : 'Subjective'} | Liq: $${market.liquidity.toFixed(0)} | Score: ${market.qualificationScore}`);
+    console.log(`[Bot] Trade logged (${status}): ${market.category} | ${market.isObjective ? 'Objective' : 'Subjective'} | Liq: $${market.liquidity.toFixed(0)} | Score: ${market.qualificationScore}`);
   }
 
   private async runStateCheck(): Promise<void> {
@@ -482,6 +490,98 @@ export class TradingBot {
     if (positions.length > 5) {
       console.log(`[Bot]   ... and ${positions.length - 5} more`);
     }
+  }
+
+  /**
+   * Check for positions that are near-certain winners and close them
+   * to free up capital for new positions.
+   * 
+   * This is configurable via trading.autoCloseThreshold in config.json
+   * - 0.99 = close positions at 99¢ (1% haircut)
+   * - null = disabled
+   */
+  private async checkForAutoClose(): Promise<void> {
+    const config = getConfig();
+    const threshold = config.trading.autoCloseThreshold;
+    
+    // Skip if disabled
+    if (threshold === null || threshold === undefined) {
+      return;
+    }
+
+    const state = await this.stateManager!.getState();
+    
+    // Find positions that are near-certain winners
+    const autoCloseTargets: Array<{
+      marketId: string;
+      tokenId: string;
+      side: string;
+      size: number;
+      currentPrice: number;
+      question: string;
+    }> = [];
+
+    for (const pos of state.positions) {
+      const price = pos.currentPrice || 0;
+      
+      // For YES positions: close if price >= threshold (e.g., 0.99)
+      // For NO positions: close if price <= 1 - threshold (e.g., 0.01)
+      const shouldClose = 
+        (pos.side === 'YES' && price >= threshold) ||
+        (pos.side === 'NO' && price <= (1 - threshold));
+      
+      if (shouldClose) {
+        autoCloseTargets.push({
+          marketId: pos.marketId,
+          tokenId: pos.tokenId,
+          side: pos.side,
+          size: pos.size,
+          currentPrice: price,
+          question: pos.question || pos.marketId.slice(0, 20),
+        });
+      }
+    }
+
+    if (autoCloseTargets.length === 0) {
+      return;
+    }
+
+    console.log(`\n[Bot] 🎯 AUTO-CLOSE: Found ${autoCloseTargets.length} near-certain winners (threshold: ${(threshold * 100).toFixed(0)}¢)`);
+
+    for (const target of autoCloseTargets) {
+      if (this.killSwitch) break;
+
+      console.log(`[Bot] Closing: ${target.question.slice(0, 40)}... @ ${(target.currentPrice * 100).toFixed(1)}¢`);
+
+      const result = await this.executor!.placeSellOrder({
+        marketId: target.marketId,
+        tokenId: target.tokenId,
+        side: target.side as 'YES' | 'NO',
+        sizeUsd: target.size, // Sell all shares
+      });
+
+      if (result.success) {
+        console.log(`[Bot] ✅ Auto-closed: ${result.orderId}`);
+        this.status.tradesClosed++;
+        
+        // Update trade in database
+        const db = getDb();
+        db.prepare(`
+          UPDATE live_trades 
+          SET status = 'closed', 
+              exit_price = ?, 
+              exit_time = CURRENT_TIMESTAMP,
+              exit_reason = 'auto_close_threshold',
+              pnl = (exit_price - entry_price) * size
+          WHERE market_id = ? AND status = 'open'
+        `).run(target.currentPrice, target.marketId);
+        
+      } else {
+        console.log(`[Bot] ❌ Auto-close failed: ${result.error}`);
+      }
+    }
+
+    console.log('[Bot] Auto-close check complete\n');
   }
 
   private logError(message: string): void {
