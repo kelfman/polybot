@@ -197,18 +197,7 @@ export class OrderExecutor {
           WHERE idempotency_key = ?
         `).run(orderId, orderStatus, idempotencyKey);
 
-        // Create live trade record
-        db.prepare(`
-          INSERT INTO live_trades (market_id, token_id, side, size, size_usd, status, entry_time, order_id)
-          VALUES (?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, ?)
-        `).run(
-          request.marketId,
-          request.tokenId,
-          request.side,
-          request.sizeUsd, // Will be updated with actual shares
-          request.sizeUsd,
-          orderId
-        );
+        // Note: live_trades record is created by bot.logTrade() with full market details
 
         return {
           success: true,
